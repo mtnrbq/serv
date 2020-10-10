@@ -21,6 +21,5 @@ COMPILE_TARGET=\
 		-I$(TARGETDIR)/$(RISCV_TARGET)/ \
 		-T$(TARGETDIR)/$(RISCV_TARGET)/link.ld $$< \
 		-o $$@; \
-	$$(RISCV_OBJCOPY) -O binary $$@  $$@.bin; \
-	$$(RISCV_OBJDUMP) -D $$@ > $$@.objdump; \
-	python3 $(TARGETDIR)/$(RISCV_TARGET)/makehex.py $$@.bin 2048 > $$@.hex;
+	$$(RISCV_OBJCOPY) -O verilog $$@  $$@.hex; \
+	$$(RISCV_OBJDUMP) -D $$@ > $$@.objdump;

@@ -28,13 +28,10 @@ filesets:
       - servant/servant_clock_gen.v
       - servant/servant_timer.v
       - servant/servant_gpio.v
-      - servant/servant_arbiter.v
       - servant/servant_mux.v
-      -  "tool_quartus? (servant/servant_ram_quartus.sv)" : {file_type : systemVerilogSource}
-      - "!tool_quartus? (servant/servant_ram.v)"
       - servant/servant.v
     file_type : verilogSource
-    depend : [serv]
+    depend : [serving]
 
   cyc1000:
     files:
