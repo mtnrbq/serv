@@ -52,27 +52,37 @@ module servant
    wire 	wb_timer_cyc;
    wire [31:0] 	wb_timer_rdt;
 
-   servant_arbiter arbiter
+   wire [6+with_csr:0] waddr;
+   wire [rf_width-1:0] wdata;
+   wire 	       wen;
+   wire [6+with_csr:0] raddr;
+   wire [rf_width-1:0] rdata;
+
+
+   wire [aw-1:0] rf_waddr = ~{{aw-2-5-with_csr{1'b0}},waddr};
+   wire [aw-1:0] rf_raddr = ~{{aw-2-5-with_csr{1'b0}},raddr};
+
+   serving_arbiter arbiter
      (.i_wb_cpu_dbus_adr (wb_dmem_adr),
       .i_wb_cpu_dbus_dat (wb_dmem_dat),
       .i_wb_cpu_dbus_sel (wb_dmem_sel),
       .i_wb_cpu_dbus_we  (wb_dmem_we ),
-      .i_wb_cpu_dbus_cyc (wb_dmem_cyc),
+      .i_wb_cpu_dbus_stb (wb_dmem_cyc),
       .o_wb_cpu_dbus_rdt (wb_dmem_rdt),
       .o_wb_cpu_dbus_ack (wb_dmem_ack),
 
       .i_wb_cpu_ibus_adr (wb_ibus_adr),
-      .i_wb_cpu_ibus_cyc (wb_ibus_cyc),
+      .i_wb_cpu_ibus_stb (wb_ibus_cyc),
       .o_wb_cpu_ibus_rdt (wb_ibus_rdt),
       .o_wb_cpu_ibus_ack (wb_ibus_ack),
 
-      .o_wb_cpu_adr (wb_mem_adr),
-      .o_wb_cpu_dat (wb_mem_dat),
-      .o_wb_cpu_sel (wb_mem_sel),
-      .o_wb_cpu_we  (wb_mem_we ),
-      .o_wb_cpu_cyc (wb_mem_cyc),
-      .i_wb_cpu_rdt (wb_mem_rdt),
-      .i_wb_cpu_ack (wb_mem_ack));
+      .o_wb_mem_adr (wb_mem_adr),
+      .o_wb_mem_dat (wb_mem_dat),
+      .o_wb_mem_sel (wb_mem_sel),
+      .o_wb_mem_we  (wb_mem_we ),
+      .o_wb_mem_stb (wb_mem_cyc),
+      .i_wb_mem_rdt (wb_mem_rdt),
+      .i_wb_mem_ack (wb_mem_ack));
 
    servant_mux #(sim) servant_mux
      (
@@ -92,6 +102,7 @@ module servant
       .o_wb_mem_we  (wb_dmem_we),
       .o_wb_mem_cyc (wb_dmem_cyc),
       .i_wb_mem_rdt (wb_dmem_rdt),
+      .i_wb_mem_ack (wb_dmem_ack),
 
       .o_wb_gpio_dat (wb_gpio_dat),
       .o_wb_gpio_we  (wb_gpio_we),
@@ -102,20 +113,6 @@ module servant
       .o_wb_timer_we  (wb_timer_we),
       .o_wb_timer_cyc (wb_timer_cyc),
       .i_wb_timer_rdt (wb_timer_rdt));
-
-   servant_ram
-     #(.memfile (memfile),
-       .depth (memsize))
-   ram
-     (// Wishbone interface
-      .i_wb_clk (wb_clk),
-      .i_wb_adr (wb_mem_adr[$clog2(memsize)-1:2]),
-      .i_wb_cyc (wb_mem_cyc),
-      .i_wb_we  (wb_mem_we) ,
-      .i_wb_sel (wb_mem_sel),
-      .i_wb_dat (wb_mem_dat),
-      .o_wb_rdt (wb_mem_rdt),
-      .o_wb_ack (wb_mem_ack));
 
    generate
       if (with_csr) begin
@@ -142,7 +139,75 @@ module servant
       .o_wb_rdt (wb_gpio_rdt),
       .o_gpio   (q));
 
-   serv_rf_top
+   localparam regs = 32+with_csr*4;
+
+   localparam rf_width = 8;
+
+   localparam aw = $clog2(memsize);
+
+   serving_ram
+     #(.memfile (memfile),
+       .depth   (memsize))
+   ram
+     (// Wishbone interface
+      .i_clk (wb_clk),
+      .i_waddr  (rf_waddr),
+      .i_wdata  (wdata),
+      .i_wen    (wen),
+      .i_raddr  (rf_raddr),
+      .o_rdata  (rdata),
+      .i_wb_adr (wb_mem_adr[$clog2(memsize)-1:2]),
+      .i_wb_stb (wb_mem_cyc),
+      .i_wb_we  (wb_mem_we) ,
+      .i_wb_sel (wb_mem_sel),
+      .i_wb_dat (wb_mem_dat),
+      .o_wb_rdt (wb_mem_rdt),
+      .o_wb_ack (wb_mem_ack));
+
+   localparam RF_L2W = $clog2(rf_width);
+
+   wire 		   rf_wreq;
+   wire 		   rf_rreq;
+   wire [$clog2(regs)-1:0] wreg0;
+   wire [$clog2(regs)-1:0] wreg1;
+   wire 		   wen0;
+   wire 		   wen1;
+   wire 		   wdata0;
+   wire 		   wdata1;
+   wire [$clog2(regs)-1:0] rreg0;
+   wire [$clog2(regs)-1:0] rreg1;
+   wire 		   rf_ready;
+   wire 		   rdata0;
+   wire 		   rdata1;
+
+
+   serv_rf_ram_if
+     #(.width    (rf_width),
+       .reset_strategy (reset_strategy),
+       .csr_regs (with_csr*4))
+   rf_ram_if
+     (.i_clk    (wb_clk),
+      .i_rst    (wb_rst),
+      .i_wreq   (rf_wreq),
+      .i_rreq   (rf_rreq),
+      .o_ready  (rf_ready),
+      .i_wreg0  (wreg0),
+      .i_wreg1  (wreg1),
+      .i_wen0   (wen0),
+      .i_wen1   (wen1),
+      .i_wdata0 (wdata0),
+      .i_wdata1 (wdata1),
+      .i_rreg0  (rreg0),
+      .i_rreg1  (rreg1),
+      .o_rdata0 (rdata0),
+      .o_rdata1 (rdata1),
+      .o_waddr  (waddr),
+      .o_wdata  (wdata),
+      .o_wen    (wen),
+      .o_raddr  (raddr),
+      .i_rdata  (rdata));
+
+   serv_top
      #(.RESET_PC (32'h0000_0000),
        .RESET_STRATEGY (reset_strategy),
        .WITH_CSR (with_csr))
@@ -151,29 +216,20 @@ module servant
       .clk      (wb_clk),
       .i_rst    (wb_rst),
       .i_timer_irq  (timer_irq),
-`ifdef RISCV_FORMAL
-      .rvfi_valid     (),
-      .rvfi_order     (),
-      .rvfi_insn      (),
-      .rvfi_trap      (),
-      .rvfi_halt      (),
-      .rvfi_intr      (),
-      .rvfi_mode      (),
-      .rvfi_ixl       (),
-      .rvfi_rs1_addr  (),
-      .rvfi_rs2_addr  (),
-      .rvfi_rs1_rdata (),
-      .rvfi_rs2_rdata (),
-      .rvfi_rd_addr   (),
-      .rvfi_rd_wdata  (),
-      .rvfi_pc_rdata  (),
-      .rvfi_pc_wdata  (),
-      .rvfi_mem_addr  (),
-      .rvfi_mem_rmask (),
-      .rvfi_mem_wmask (),
-      .rvfi_mem_rdata (),
-      .rvfi_mem_wdata (),
-`endif
+      //RF IF
+      .o_rf_rreq   (rf_rreq),
+      .o_rf_wreq   (rf_wreq),
+      .i_rf_ready  (rf_ready),
+      .o_wreg0     (wreg0),
+      .o_wreg1     (wreg1),
+      .o_wen0      (wen0),
+      .o_wen1      (wen1),
+      .o_wdata0    (wdata0),
+      .o_wdata1    (wdata1),
+      .o_rreg0     (rreg0),
+      .o_rreg1     (rreg1),
+      .i_rdata0    (rdata0),
+      .i_rdata1    (rdata1),
 
       .o_ibus_adr   (wb_ibus_adr),
       .o_ibus_cyc   (wb_ibus_cyc),

@@ -14,7 +14,7 @@ module servant_mux
    input wire 	      i_wb_cpu_we,
    input wire 	      i_wb_cpu_cyc,
    output wire [31:0] o_wb_cpu_rdt,
-   output reg 	      o_wb_cpu_ack,
+   output wire 	      o_wb_cpu_ack,
 
    output wire [31:0] o_wb_mem_adr,
    output wire [31:0] o_wb_mem_dat,
@@ -22,6 +22,7 @@ module servant_mux
    output wire 	      o_wb_mem_we,
    output wire 	      o_wb_mem_cyc,
    input wire [31:0]  i_wb_mem_rdt,
+   input wire 	      i_wb_mem_ack,
 
    output wire 	      o_wb_gpio_dat,
    output wire 	      o_wb_gpio_we,
@@ -39,12 +40,17 @@ module servant_mux
 
    assign o_wb_cpu_rdt = s[1] ? i_wb_timer_rdt :
 			 s[0] ? {31'd0,i_wb_gpio_rdt} : i_wb_mem_rdt;
+
+   reg 		  ack;
+
+   assign o_wb_cpu_ack = (s == 2'b00) ? i_wb_mem_ack : ack;
+
    always @(posedge i_clk) begin
-      o_wb_cpu_ack <= 1'b0;
-      if (i_wb_cpu_cyc & !o_wb_cpu_ack)
-	o_wb_cpu_ack <= 1'b1;
+      ack <= 1'b0;
+      if (i_wb_cpu_cyc & !ack)
+	ack <= 1'b1;
       if (i_rst)
-	o_wb_cpu_ack <= 1'b0;
+	ack <= 1'b0;
    end
 
    assign o_wb_mem_adr = i_wb_cpu_adr;
